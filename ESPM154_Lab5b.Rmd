@@ -26,13 +26,18 @@ knitr::opts_chunk$set(echo = TRUE)
 
 Load required packages...
 ```{r packages, include=FALSE, warning=FALSE}
+devtools::install_github("TheWangLab/algatr")
+library(algatr)
+
+install.packages("terra")
+library(terra)
 # Make a list of the packages we need, check whether they're installed, and install the ones we're missing...
-required.pkg <- c("terra", "algatr", "gdm", "GGally", "cowplot")
-pkgs.not.installed <- required.pkg[!sapply(required.pkg, function(p) require(p, character.only=T))]
-if (length(pkgs.not.installed) > 0) install.packages(pkgs.not.installed, dependencies=TRUE)
+#required.pkg <- c("terra", "algatr", "gdm", "GGally", "cowplot")
+#pkgs.not.installed <- required.pkg[!sapply(required.pkg, function(p) require(p, character.only=T))]
+#if (length(pkgs.not.installed) > 0) install.packages(pkgs.not.installed, dependencies=TRUE)
 
 # Load the required libraries...
-lapply(required.pkg, library, character.only = TRUE) 
+#lapply(required.pkg, library, character.only = TRUE) 
 mmrr_packages()
 gdm_packages()
 ```
