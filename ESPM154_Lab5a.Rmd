@@ -27,6 +27,12 @@ knitr::opts_chunk$set(echo = TRUE)
 
 Load required packages...
 ```{r packages, include=FALSE, eval=FALSE, warning=FALSE}
+install.packages("devtools")
+library(devtools)
+
+devtools::install_github("bcm-uga/TESS3_encho_sen")
+devtools::install_github("TheWangLab/algatr")
+
 # Make a list of the packages we need, check whether they're installed, and install the ones we're missing...
 required.pkg <- c("algatr", "tess3r", "ggplot2", "terra", "sf")
 pkgs.not.installed <- required.pkg[!sapply(required.pkg, function(p) require(p, character.only=T))]
@@ -63,7 +69,7 @@ liz_vcf@gt[1:10,1:10]
 # Note that the rows are loci and the columns are individual lizards
 ``` 
 
-Quesition 1: What would the dosage values be for the following genotypes?:
+Question 1: What would the dosage values be for the following genotypes?:
 "0/0" = ?
 "0/1" = ?
 "1/1" = ?
