@@ -1,0 +1,245 @@
+---
+title: "ESPM 154, Lab 5: Landscape Corridor Analysis"
+output: html_document
+---
+
+## Overview and Goals
+
+In this lab, we will conduct a GIS analysis to identify potential dispersal corridors on a landscape and calculate three forms of resistance/cost-based distances.  Landscape resistance/cost-based approaches explicitly recognize that landscapes are heterogeneous, and therefore, accounting for heterogeneity is important for understanding how organisms move across landscapes and for efforts to maintain or restore population connectivity.
+
+Goals--
+1: Learn how to conduct least cost path analysis (LCPA).
+2: Learn how to calculate straight line (Euclidean) distances and Circuit Theory distances.
+
+
+### Set up the R session ###
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Start with a clean slate...
+rm(list = ls()) 
+```
+
+Load required packages...
+```{r packages, include=FALSE}
+# Make a list of the packages we need, check whether they're installed, and install the ones we're missing...
+required.pkg <- c("raster", "RColorBrewer", "sp", "gdistance", "vegan")
+pkgs.not.installed <- required.pkg[!sapply(required.pkg, function(p) require(p, character.only=T))]
+if (length(pkgs.not.installed) > 0) install.packages(pkgs.not.installed, dependencies=TRUE)
+
+# Load the required libraries...
+lapply(required.pkg, library, character.only = TRUE) 
+```
+
+--------------------------------------
+
+## Part 1: Least Cost Path Analysis ##
+
+First, we'll identify the least cost paths between points on a heterogeneous landscape.  The least cost path is the path of single cells between two points that minimizes the total cumulative cost of moving through all cells in the path.
+
+There are many different ways we can parameterize a cost raster. For this exercise, we will use a habitat suitability model (also called a species distribution model or SDM). Using this raster layer as our cost surface, we can then implement these steps to perform the least cost path analysis (LCPA):
+
+1) Assemble the dataset, which include a landscape raster and a set of point localities.
+2) Create a raster of resistance values for each cell (the resistance raster).
+3) Construct rasters of total accumulated costs for each starting point to every other cell on the landscape (the cost distance rasters).
+4) Calculate the least cost paths between points from the cost distance rasters.
+
+Our study system this week is the California red-legged frog, Rana draytonii, a species listed as Vulnerable under the Endangered Species Act. We will start by reading in a raster layer for our study landscape and a set of point localities. For our landscape layer, we will use a species distribution model (SDM) constructed using the program Maxent. In this raster, the value of each cell represents the habitat suitability (on a scale from 0 to 1) based on the habitat conditions in which this species occurs.
+```{r}
+# Load SDM raster
+sdm <- raster("SDM.tif")
+
+# Load point localities
+sp <- read.csv("pts.csv")
+sp <- SpatialPoints(sp)
+
+# And plot the data
+sdmCol <- colorRampPalette(c("blue", "green", "yellow", "orange", "red"))
+plot(sdm, col=sdmCol(100))
+points(sp, pch=0, cex=2)
+points(sp, pch=c("1", "2", "3", "4", "5"), cex=0.75)
+```
+
+And then we can create a resistance raster based on our habitat suitability raster.  To do this, we want to subtract the habitat suitability values from 1, because more suitable habitat should have lower resistance.  This will give us a raster of values that range from 0 to 1, with higher values indicating more landscape resistance.  This would normally be all we need to do, but the gdistance package actually wants the input raster as a 'conductance' raster rather than a 'resistance' raster.  Conductance is just the inverse of resistance (1/resistance), so the values for our final raster will need to be 1 / (1 - habitat suitability).
+```{r}
+conductance.r <- 1/(1-sdm)
+
+# And plot the results...
+resCol <- colorRampPalette(c("yellow", "red", "blue"), bias=2)
+plot(1/conductance.r, col=resCol(100), main="Resistance Raster") # Plotting the inverse of "conductance," which is "resistance"
+points(sp, pch=0, cex=2)
+points(sp, pch=c("1", "2", "3", "4", "5"), cex=0.75)
+```
+
+Now we can create a transition surface using the transition() function in the gdistance package.
+
+transition (x, transitionFunction, directions, ...)
+  x: RasterLayer or RasterBrick
+  transitionFunction: function to calculate transition values from grid values
+  directions: number of directions in which cells are connected (4, 8, 16, or other)
+  
+Because we have real geographic coordinates, we also need to correct for the projection of the raster, and becayse we are using an 8-neighbor rule we also have to correct for variation in distance between cells.  We do this with the geoCorrection() function in the gdistance package.
+
+```{r}
+trSurface <- transition(conductance.r, transitionFunction = mean, directions = 8)
+trSurface <- geoCorrection(trSurface, type="c", scl = FALSE)
+trSurface # Check the result
+```
+
+Next, we generate a cost distance raster using the accCost() function from gdistance - accCost stands for accumulated cost.
+
+accCost(x, fromCoords)
+  x: TransitionLayer object
+  fromCoords: SpatialPoints, vector or matrix with coordinates of origin points
+  
+```{r}
+costSurface <- accCost(trSurface, sp[1]) # Cost surface starting from point 1
+
+# And plot the results...
+dCol <- colorRampPalette(c("yellow", "orange", "red", "deeppink","purple", "blue"), bias=1, interpolate="linear")
+plot(costSurface, col=dCol(100))
+points(sp, pch=0, cex=2)
+points(sp, pch=c("1", "2", "3", "4", "5"), cex=0.75)
+```
+
+**Take a moment to answer Question 1.**
+
+Now we're ready to calculate the least cost paths and see where they are on the map.  For that, we need gdistance's shortestPath() function.
+
+shortestPath (x, origin, goal)
+  x: TransitionLayer object
+  origin: SpatialPoints, vector or matrix with coordinates, at the moment only the first cell is taken into account
+  goal: SpatialPoints, vector or matrix with coordinates
+
+```{r}
+paths <- shortestPath(trSurface, sp[1], sp, output="SpatialLines")
+paths # Check that it worked
+```
+
+The output is a SpatialLines object that we can plot on the map.
+```{r}
+plot(sdm, col=sdmCol(100))
+points(sp, pch=0, cex=2)
+points(sp, pch=c("1", "2", "3", "4", "5"), cex=0.75)
+lines(paths, col="darkred", lwd=2)
+```
+
+The shortestPath() function only uses a single point in the origin argument.  So, to get the full set of paths, we should write a loop that cycles through all of the points.  
+
+In the code chunk below, calculate all of the least cost paths for points 2 through 5.  You can use the rbind() function to combine SpatialLines objects, which is like using c() to combine elements into a vector or using stack() for combining rasters into a raster stack.  Add the new spatial lines for the least cost paths into the object named paths that we created above.
+```{r}
+# We've already run sp[1], so we can just run points 2-5.
+for (i in 2:5){
+    paths <- rbind(paths, shortestPath(trSurface, sp[i], sp, output="SpatialLines"))
+}
+```
+
+And then we can plot all of the paths on the SDM map.
+```{r}
+plot(sdm, col=sdmCol(100))
+points(sp, pch=0, cex=2)
+points(sp, pch=c("1", "2", "3", "4", "5"), cex=0.75)
+lines(paths, col="darkred", lwd=2)
+```
+
+Next, we can calculate all of the pairwise least cost path distances between our points.  We can actually do this without running shortestPath() first; that step is just for retrieving the paths themselves.  Anyway, to get the cost distance along the LCPs, we'll use gdistance's costDistance() function.  The output is a vector of the least cost path distances, which we can turn into a matrix for easier viewing.
+
+costDistance(x, sp)
+  x: TransitionLayer object
+  sp: SpatialPoints or SpatialPolygons object
+
+```{r}
+costDists <- costDistance(trSurface, sp) # Calculate cost distance for all points
+costDists <- as.matrix(costDists) # Transform distance vector into a matrix
+costDists # Show us the result
+```
+
+Let's also calculate straight line (Euclidean) distances for comparison.  For that, we'll use the pointDistance() function in the raster package.
+
+pointDistance (p1, p2, lonlat)
+  p1: x and y coordinate of first (set of) point(s), either as c(x, y), matrix(ncol=2), or SpatialPoints*.
+  p2: x and y coordinate of second (set of) second point(s) (like for p1). If this argument is missing, a distance matrix is computed for p1
+  lonlat: If TRUE, coordinates should be in degrees; else they should represent planar ('Euclidean') space (e.g. units of meters)
+
+```{r}
+strtDists <- pointDistance(sp, lonlat = TRUE)
+strtDists <- as.matrix(strtDists)
+strtDists
+```
+
+Plot straight line vs. cost distances...
+```{r, fig.width=5}
+plot(strtDists[lower.tri(strtDists)], costDists[lower.tri(costDists)], pch=16, xlab="Euclidean Distance", ylab="LCP Distance")
+```
+
+And run a simple Mantel test to see how similar they are.  The Mantel test is a linear regression analysis for distance matrices - Mantel's r statistic tells us how closely correlated the two distance matrices are, and the p-value ("significance") tells us whether the correlation is significantly different from that expected by chance.
+
+In the code block below, run a Mantel test for the cost distances vs. the straight (Euclidean) distances.
+
+mantel(xdis, ydis, permutations = 999)
+  xdis, ydis: Dissimilarity matrices or dist objects for which the correlation will be calculated
+  permutations: The number of permutations to run
+  
+```{r}
+
+```
+
+**Take a moment to answer Question 2.**
+
+----------------------------------------------
+## Part 2: Circuit Theory Distance Analysis ##
+
+LCPA has been criticized because it only calculates the single (one cell wide) least cost path between points, which may be an unrealistic representation of actual dispersal on a complex landscape.  Several alternatives have been proposed.  One of the more popular ones is the calculation of resistance distances based on circuit analysis.  Basically, this approach treats all of the points as nodes in a circuit that are connected by different resistors.  The flow of individuals, genes, or whatever, is analogous to the flow of electricity across the circuit.  Functionally, the difference between circuit theory distance and least cost path distance is that the circuit distance is a weighted average of all possible connections in the graph, whereas LCP distance is only the shortest/least cost.  Calculating resistance distances is pretty easy using gdistance's commuteDistance() function.
+
+commuteDistance(x, sp)
+  x: TransitionLayer object
+  sp: SpatialPoints or SpatialPolygons object
+
+In the code chunk below, calculate the circuit theory distances using the commuteDistance() function for all of the points. Assign the distances to a matrix object named circuitDists.
+```{r}
+
+
+```
+
+See how these compare to the cost distances...
+```{r, fig.width=5}
+plot(circuitDists[lower.tri(circuitDists)], costDists[lower.tri(costDists)], pch=16, xlab="Circuit Distance", ylab="LCP Distance")
+```
+
+And run a simple Mantel test to see how correlated the circuit theory and least cost path distances are...
+```{r}
+
+
+```
+
+**Take a moment to answer Question 3.**
+
+----------------------------------
+
+## Part 3: Least Cost Corridors ##
+
+Instead of calculating just the single least cost path, we can also calculate a landscape corridor that incorporates a cost distance buffer around the LCP.  Basically, this approach gives us all of the paths that have a cost distance within 5% of the least cost path distance.  There are three steps required to implement this analysis:
+1) For every pair of points, create rasters of cost distances from each point. 
+2) Add the rasters together.
+3) Delete any cells that have a summed cost greater than twice the LCP distance plus a 5% buffer.
+The result is a map of potential dispersal corridors weighted by total cost.
+
+**In the code chunk below, implement this method to identify the least cost corridor between points 1 and 3.  The result should be a raster layer named corridor.r that contains the map for the least cost corridor.**  
+Hint: You can "delete" cells in a raster by changing them into NA values under a condition.
+e.g. raster1[raster1 > 0.5] <- NA  # Changes all cells in raster1 greater than 0.5 to NA. 
+```{r}
+
+
+```
+
+And plot the result...
+```{r}
+plot(corridor.r, col=resCol(100))
+points(sp[c(1,3)], pch=0, cex=2)
+```
+
+**Take a moment to answer Questions 4 and 5.**
+
+### The End ###
+
