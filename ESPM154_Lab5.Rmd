@@ -165,7 +165,7 @@ pointDistance (p1, p2, lonlat)
 ```{r}
 strtDists <- pointDistance(sp, lonlat = TRUE)
 strtDists <- as.matrix(strtDists)
-strtDists[upper.tri(x)] <- t(strtDists)[upper.tri(strtDists)]
+strtDists[upper.tri(strtDists)] <- t(strtDists)[upper.tri(strtDists)]
 strtDists
 ```
 
