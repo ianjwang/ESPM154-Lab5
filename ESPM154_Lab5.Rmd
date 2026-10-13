@@ -223,7 +223,7 @@ And run a simple Mantel test to see how correlated the circuit theory and least 
 Instead of calculating just the single least cost path, we can also calculate a landscape corridor that incorporates a cost distance buffer around the LCP.  Basically, this approach gives us all of the paths that have a cost distance within 5% of the least cost path distance.  There are three steps required to implement this analysis:
 1) For every pair of points, create rasters of cost distances from each point. 
 2) Add the rasters together.
-3) Delete any cells that have a summed cost greater than twice the LCP distance plus a 5% buffer.
+3) Delete any cells that have a summed cost greater than the LCP distance plus a 5% buffer.
 The result is a map of potential dispersal corridors weighted by total cost.
 
 **In the code chunk below, implement this method to identify the least cost corridor between points 1 and 3.  The result should be a raster layer named corridor.r that contains the map for the least cost corridor.**  
